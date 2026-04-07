@@ -1,0 +1,3 @@
+delta-rest-client
+pandas
+pytz
