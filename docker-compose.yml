@@ -1,0 +1,31 @@
+version: "3.9"
+
+services:
+  trading-bot:
+    build: .
+    container_name: camarilla-bot
+    restart: always
+
+    env_file:
+      - .env
+
+    volumes:
+      - ./data:/app/data   # for backtesting data
+      - ./logs:/app/logs   # optional logs
+
+    command: python app.py
+
+  backtest:
+    build: .
+    container_name: backtest-runner
+
+    env_file:
+      - .env
+
+    volumes:
+      - ./data:/app/data
+
+    command: python backtest.py
+
+    profiles:
+      - backtest
