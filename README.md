@@ -184,12 +184,179 @@ timestamp,open,high,low,close,volume
 
 ---
 
-## 📌 Recommended Next Steps
 
-* Add logging system
-* Add Telegram alerts
+
+# 🐳 Docker Compose Setup Guide
+
+This guide explains how to run the Camarilla Crypto Bot and Backtesting system using **Docker Compose**.
+
+---
+
+## 📦 Overview
+
+The project uses Docker Compose to manage two services:
+
+* **trading-bot** → Runs the live strategy (app.py)
+* **backtest** → Runs backtesting (backtest.py) on demand
+
+---
+
+## 📁 Project Structure
+
+```bash
+project/
+│── app.py
+│── backtest.py
+│── Dockerfile
+│── docker-compose.yml
+│── requirements.txt
+│── .env
+│── data/
+│── logs/
+```
+
+---
+
+## ⚙️ Prerequisites
+
+Make sure you have:
+
+* Docker installed
+* Docker Compose installed (v2+)
+* API credentials from Delta Exchange
+
+---
+
+## 🔑 Step 1: Configure Environment
+
+Create a `.env` file:
+
+```env
+API_KEY=your_api_key_here
+API_SECRET=your_api_secret_here
+```
+
+---
+
+## 📊 Step 2: Prepare Backtesting Data (Optional)
+
+Create a data folder:
+
+```bash
+mkdir data
+```
+
+Add CSV files:
+
+```bash
+data/BTCUSD.csv
+data/ETHUSD.csv
+```
+
+### CSV Format
+
+```csv
+timestamp,open,high,low,close,volume
+2024-01-01 00:00:00,42000,42100,41950,42050,123
+```
+
+---
+
+## 🚀 Step 3: Build Containers
+
+```bash
+docker compose build
+```
+
+---
+
+## ▶️ Step 4: Run Trading Bot
+
+```bash
+docker compose up -d trading-bot
+```
+
+* Runs in background
+* Auto-restarts on failure
+
+---
+
+## 📈 Step 5: Run Backtesting
+
+```bash
+docker compose --profile backtest up backtest
+```
+
+* Runs once and exits
+* Prints results in terminal
+
+---
+
+## 🛑 Step 6: Stop Services
+
+```bash
+docker compose down
+```
+
+---
+
+## 🔄 Step 7: Rebuild After Changes
+
+```bash
+docker compose up --build -d
+```
+
+---
+
+## 📜 Logs
+
+View bot logs:
+
+```bash
+docker logs -f camarilla-bot
+```
+
+---
+
+## 🔧 Optional Improvements
+
+* Add persistent logging in `/logs`
+* Add monitoring tools (Grafana, Prometheus)
+* Add alert system (Telegram)
+
+---
+
+## ⚠️ Important Notes
+
+* Ensure correct **PRODUCT_ID mapping**
+* Verify symbol names (BTCUSD, ETHUSD, etc.)
+* Always test with **backtesting before live run**
+* Use small capital if testing live
+
+---
+
+## 🧪 Development Workflow
+
+1. Modify code
+2. Rebuild container
+3. Test using backtest
+4. Deploy bot
+
+---
+
+## 🚨 Disclaimer
+
+* This project is for **educational purposes only**
+* Not intended for production use
+* No responsibility for financial losses
+
+---
+
+## 📌 Next Steps
+
+* Add WebSocket for real-time trading
 * Improve backtesting accuracy
-* Add WebSocket support
+* Add trade analytics dashboard
 
 ---
 
