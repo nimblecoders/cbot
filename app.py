@@ -94,7 +94,7 @@ def load_levels():
     camarilla = {}
 
     for sym in SYMBOLS:
-        df = pd.DataFrame(client.get_candles(sym, "1d", limit=2))
+        df = pd.DataFrame(client.get_ohlc(sym, "1d", limit=2))
         prev = df.iloc[-2]
 
         h, l, c = float(prev['high']), float(prev['low']), float(prev['close'])
@@ -127,7 +127,7 @@ def candle_strength(df):
 
 
 def get_price(symbol):
-    df = client.get_candles(symbol, "5m", limit=1)
+    df = client.get_ohlc(symbol, "5m", limit=1)
     return float(df[0]['close'])
 
 
@@ -178,7 +178,7 @@ def run():
             # --- ENTRY ---
             if position is None:
                 for sym in SYMBOLS:
-                    df = pd.DataFrame(client.get_candles(sym, "5m", limit=3))
+                    df = pd.DataFrame(client.get_ohlc(sym, "5m", limit=3))
 
                     prev_close = float(df.iloc[-2]['close'])
                     curr_close = float(df.iloc[-1]['close'])
