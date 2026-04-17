@@ -213,4 +213,11 @@ def run():
 
 
 if __name__ == "__main__":
+    print("🚀 Camarilla Bot Starting...")
+    print("📊 Symbols:", SYMBOLS)
+    print("⚙️  SL:", cfg.trading.sl_pct, "TP:", cfg.trading.tp_pct)
+    print("📧 Email:", "Configured" if cfg.email.email_user else "Disabled")
+    print("✅ Ready for live trading...")
+    print("-" * 50)
+    
     run()
