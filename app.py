@@ -4,7 +4,18 @@ from datetime import datetime, timedelta
 import pytz
 import os
 
+import config
+from helpers.binance_helper import get_5m_candles, get_current_price
+from helpers.email_helper import send_new_trade_alert, send_sl_hit_alert
+from helpers.delta_helper import place_market_order, place_stop_loss, exit_position
+from helpers.camarilla_helper import load_daily_levels
+
 from delta_rest_client import DeltaRestClient
+
+cfg = config.load_config()
+
+API_KEY = os.getenv("API_KEY")
+API_SECRET = os.getenv("API_SECRET")
 
 # --- CONFIG ---
 API_KEY = os.getenv("API_KEY")
@@ -13,18 +24,6 @@ API_SECRET = os.getenv("API_SECRET")
 BASE_URL = "https://api.india.delta.exchange"
 
 SYMBOLS = ["BTCUSD", "ETHUSD", "SOLUSD", "XRPUSD", "BNBUSD"]
-
-PRODUCT_MAP = {
-    "BTCUSD": 27,
-    "ETHUSD": 28,
-    "SOLUSD": 29,
-    "XRPUSD": 30,
-    "BNBUSD": 31
-}
-
-ORDER_SIZE = 1
-SL_PCT = 0.005
-TP_PCT = 0.01
 
 IST = pytz.timezone("Asia/Kolkata")
 
@@ -83,29 +82,7 @@ current_day = None
 last_trade_time = None
 
 
-# --- HELPERS ---
-def load_levels():
-    global camarilla, current_day
-
-    today = datetime.now(IST).date()
-    if current_day == today:
-        return
-
-    camarilla = {}
-
-    for sym in SYMBOLS:
-        df = pd.DataFrame(client.get_ohlc(sym, "1d", limit=2))
-        prev = df.iloc[-2]
-
-        h, l, c = float(prev['high']), float(prev['low']), float(prev['close'])
-
-        r3 = c + (h - l) * 1.1 / 4
-        s3 = c - (h - l) * 1.1 / 4
-
-        camarilla[sym] = (r3, s3)
-
-    current_day = today
-    print("Camarilla updated")
+camarilla_levels = None
 
 
 def valid_breakout(prev_close, curr_close, level, side):
@@ -124,11 +101,6 @@ def candle_strength(df):
     o = float(df.iloc[-1]['open'])
     c = float(df.iloc[-1]['close'])
     return abs(c - o) / o
-
-
-def get_price(symbol):
-    df = client.get_ohlc(symbol, "5m", limit=1)
-    return float(df[0]['close'])
 
 
 def place_market(pid, side):
@@ -151,6 +123,9 @@ def place_sl(pid, side, price):
     )
 
 
+
+
+
 # --- MAIN ---
 def run():
     global last_trade_time
@@ -160,7 +135,8 @@ def run():
 
     while True:
         try:
-            load_levels()
+            global camarilla_levels
+            camarilla_levels = load_daily_levels()
 
             now = datetime.now(IST)
 
@@ -178,15 +154,15 @@ def run():
             # --- ENTRY ---
             if position is None:
                 for sym in SYMBOLS:
-                    df = pd.DataFrame(client.get_ohlc(sym, "5m", limit=3))
+                    df = get_5m_candles(sym, 3)
 
-                    prev_close = float(df.iloc[-2]['close'])
-                    curr_close = float(df.iloc[-1]['close'])
+                    prev_close = df['close'].iloc[-2]
+                    curr_close = df['close'].iloc[-1]
 
                     if candle_strength(df) < 0.0015:
                         continue
 
-                    r3, s3 = camarilla[sym]
+                    r3, s3 = camarilla_levels[sym]
 
                     if valid_breakout(prev_close, curr_close, r3, "buy"):
                         side = "buy"
@@ -203,11 +179,13 @@ def run():
 
                     print(f"TRADE {sym} {side}")
 
-                    place_market(pid, side)
+                    delta_helper.place_market_order(sym, side)
 
                     position = Position(sym, side, curr_close)
 
-                    place_sl(pid, side, position.sl)
+                    send_new_trade_alert(sym, side, curr_close, position.sl, position.tp, cfg.trading.order_size, PRODUCT_MAP[sym], 'R3' if side == 'buy' else 'S3')
+
+                    place_stop_loss(sym, side, position.sl)
 
                     limiter.record()
                     last_trade_time = now
@@ -218,17 +196,13 @@ def run():
                 sym = position.symbol
                 pid = PRODUCT_MAP[sym]
 
-                price = get_price(sym)
+                price = get_current_price(sym)
                 position.update(price)
 
-                if position.side == "buy" and price <= position.sl:
-                    place_market(pid, "sell")
-                    print("Exit BUY SL")
-                    position = None
-
-                elif position.side == "sell" and price >= position.sl:
-                    place_market(pid, "buy")
-                    print("Exit SELL SL")
+                if price <= position.sl if position.side == "buy" else price >= position.sl:
+                    print(f"Exit {position.side.upper()} SL")
+                    exit_position(sym, position.side)
+                    send_sl_hit_alert(sym, position.side, position.entry, price)
                     position = None
 
             time.sleep(20)

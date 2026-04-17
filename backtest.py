@@ -3,22 +3,17 @@ import numpy as np
 from datetime import datetime
 import pytz
 
-# --- CONFIG ---
-SYMBOLS = ["BTCUSD", "ETHUSD", "SOLUSD", "XRPUSD", "BNBUSD"]
+import config
+cfg = config.load_config()
 
-SL_PCT = 0.005
-TP_PCT = 0.01
-
-INITIAL_BALANCE = 10000
-RISK_PER_TRADE = 0.02  # 2%
-
+INITIAL_BALANCE = 100
+RISK_PER_TRADE = 0.02
 IST = pytz.timezone("Asia/Kolkata")
 
 
 # --- LOAD DATA ---
 def load_data(symbol):
-    # Expect CSV: timestamp,open,high,low,close,volume
-    df = pd.read_csv(f"data/{symbol}.csv")
+    df = pd.read_csv(f"{cfg.data_dir}/{symbol}.csv")
     df['timestamp'] = pd.to_datetime(df['timestamp'])
     return df
 
@@ -74,7 +69,7 @@ def run_backtest():
     trade_count_day = 0
     current_day = None
 
-    for symbol in SYMBOLS:
+    for symbol in cfg.trading.symbols:
         df = load_data(symbol)
         df = camarilla(df)
 
@@ -97,7 +92,7 @@ def run_backtest():
             # ENTRY
             if position is None and trade_count_day < 2:
 
-                if candle_strength(row) < 0.0015:
+                if candle_strength(row) < cfg.trading.candle_strength_min:
                     continue
 
                 if breakout(prev['close'], row['close'], row['r3'], "buy"):
@@ -109,8 +104,8 @@ def run_backtest():
 
                 entry = row['close']
 
-                sl = entry * (1 - SL_PCT if side == "buy" else 1 + SL_PCT)
-                tp = entry * (1 + TP_PCT if side == "buy" else 1 - TP_PCT)
+                sl = entry * (1 - cfg.trading.sl_pct if side == "buy" else 1 + cfg.trading.sl_pct)
+                tp = entry * (1 + cfg.trading.tp_pct if side == "buy" else 1 - cfg.trading.tp_pct)
 
                 risk_amt = balance * RISK_PER_TRADE
                 qty = risk_amt / abs(entry - sl)
@@ -120,7 +115,9 @@ def run_backtest():
                     "entry": entry,
                     "sl": sl,
                     "tp": tp,
-                    "qty": qty
+                    "qty": qty,
+                    "symbol": symbol,
+                    "entry_date": day
                 }
 
                 trade_count_day += 1
@@ -129,30 +126,60 @@ def run_backtest():
             elif position:
                 price = row['close']
 
+                exit_date = row['timestamp'].date()
+
                 if position['side'] == "buy":
                     if price <= position['sl']:
                         pnl = (position['sl'] - position['entry']) * position['qty']
                         balance += pnl
-                        trades.append(pnl)
+                        trades.append({
+                            'symbol': position['symbol'],
+                            'side': position['side'],
+                            'entry_date': position['entry_date'],
+                            'exit_date': exit_date,
+                            'pnl': pnl,
+                            'win': pnl > 0
+                        })
                         position = None
 
                     elif price >= position['tp']:
                         pnl = (position['tp'] - position['entry']) * position['qty']
                         balance += pnl
-                        trades.append(pnl)
+                        trades.append({
+                            'symbol': position['symbol'],
+                            'side': position['side'],
+                            'entry_date': position['entry_date'],
+                            'exit_date': exit_date,
+                            'pnl': pnl,
+                            'win': pnl > 0
+                        })
                         position = None
 
                 else:
                     if price >= position['sl']:
                         pnl = (position['entry'] - position['sl']) * position['qty']
                         balance += pnl
-                        trades.append(pnl)
+                        trades.append({
+                            'symbol': position['symbol'],
+                            'side': position['side'],
+                            'entry_date': position['entry_date'],
+                            'exit_date': exit_date,
+                            'pnl': pnl,
+                            'win': pnl > 0
+                        })
                         position = None
 
                     elif price <= position['tp']:
                         pnl = (position['entry'] - position['tp']) * position['qty']
                         balance += pnl
-                        trades.append(pnl)
+                        trades.append({
+                            'symbol': position['symbol'],
+                            'side': position['side'],
+                            'entry_date': position['entry_date'],
+                            'exit_date': exit_date,
+                            'pnl': pnl,
+                            'win': pnl > 0
+                        })
                         position = None
 
     return trades, balance
@@ -160,8 +187,9 @@ def run_backtest():
 
 # --- REPORT ---
 def report(trades, balance):
-    wins = [t for t in trades if t > 0]
-    losses = [t for t in trades if t < 0]
+    pnl_values = [t['pnl'] for t in trades]
+    wins = [p for p in pnl_values if p > 0]
+    losses = [p for p in pnl_values if p < 0]
 
     print("\n===== BACKTEST RESULT =====")
     print("Final Balance:", round(balance, 2))
@@ -172,6 +200,41 @@ def report(trades, balance):
     print("===========================\n")
 
 
+def run_experiments():
+    """Run parameter sweeps for optimization."""
+    results = []
+    
+    # Test different SL/TP ratios
+    for sl_pct in [0.003, 0.005, 0.007]:
+        for tp_pct in [0.008, 0.01, 0.012]:
+            cfg.trading.sl_pct = sl_pct
+            cfg.trading.tp_pct = tp_pct
+            
+            trades, balance = run_backtest()
+            win_rate = len([t for t in trades if t['win']]) / len(trades) * 100 if trades else 0
+            
+            results.append({
+                'sl_pct': sl_pct,
+                'tp_pct': tp_pct,
+                'balance': balance,
+                'win_rate': win_rate,
+                'trades': len(trades)
+            })
+            print(f"SL:{sl_pct:.1%} TP:{tp_pct:.1%} → Balance: ${balance:.2f} Win: {win_rate:.1f}%")
+    
+    # Best result
+    best = max(results, key=lambda x: x['balance'])
+    print(f"\n🏆 BEST: SL:{best['sl_pct']:.1%} TP:{best['tp_pct']:.1%}")
+    print(f"Balance: ${best['balance']:.2f} | Win Rate: {best['win_rate']:.1f}%")
+    
+    return results, best
+
+
 if __name__ == "__main__":
+    print("=== BASELINE ===")
     trades, balance = run_backtest()
     report(trades, balance)
+    
+    print("\n=== OPTIMIZATION ===")
+    experiments, best = run_experiments()
+    print("\nOptimization complete!")
